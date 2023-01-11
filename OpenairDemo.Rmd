@@ -1,0 +1,136 @@
+---
+title: "Openair demo for DEFRA"
+author: "Euan Wilkins"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(
+  comment = "##", message = FALSE, fig.width = 5
+)
+```
+
+
+## What is openair?
+
+Openair is a package in R that can be used to assess air quality data in the UK & Europe. Key functionalities include being able to access the core air quality data bases in the UK through the program including AURN, AQE & local networks in addition to the ability to create a range of useful graphs and graphics to visualise the data. Using its sister packages openairmaps & worldmet, it is possible to create a range of map graphics to display geographic air quality data and access meteorological data directly from the NOAA. These three packages are listed below.
+
+
+```{r}
+## The packages you may need to work with openair in addition to the standard tidyverse suit are as follows:
+
+library(openair)
+library(openairmaps)
+library(worldmet)
+```
+
+```{r, echo=FALSE}
+library(knitr)
+library(dplyr)
+library(pander)
+library(kableExtra)
+library(tidyr)
+library(lubridate)
+```
+
+## Importing air quality data
+
+One of the main data sources for air quality data in England is the AURN data network (Air Quality England Network). The openair package provides direct access to AURN network to import data through the following command.
+
+```{r, eval=FALSE}
+importAURN()
+```
+
+This can provide air quality for many montioring sites across the network as summarised in the table below. There are additional pollutant types to the main ones included below.
+
+```{r, echo = FALSE, warning=FALSE}
+aurn_meta <- importMeta(source = "aurn", all = TRUE) %>%
+  filter(variable == c("O3", "NO", "NO2", "NOx", "SO2", "CO", "PM10", "PM2.5")) %>%
+  dplyr::select(code, site, site_type, variable, start_date, end_date, zone)
+  
+aurn_meta %>%
+  kbl(digits=3, caption = "Measuring sites in the AURN network for key pollutants") %>%
+  kable_minimal(c("striped", "hover", "condensed"), font_size=13, fixed_thead = T) %>%
+  column_spec(1, bold = T) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+Openair also provides access to devolved administration and European air quality monitoring networks throught the following commands
+
+```{r, eval=FALSE}
+importAQE()  ##for Air Quality England network
+importSAQN() ##for Scotland air quality network
+importEurope() ##for European air quality network
+```
+
+## Plotting Air Quality data
+
+There are a number of plots built into openair that can be used to understand air pollution in individual sites.
+
+The first type is a wind rose. This can be used to understand the average wind speed and direction at a site over a defined time period. Here we have a wind rose for marylebone road site in 2021
+
+```{r, echo=FALSE}
+my1_2021 <- importAURN(site = "my1", year = 2021, data_type = "hourly", pollutant = c("nox", "ws", "wd"))
+
+windRose(my1_2021)
+```
+
+Another plot provided by openair is the polar plot. This shows pollutant concentration by wind speed and direction. The polar plot below shows nox concentration for marylebone road site in 2021. It shows the highest concentrations occur when there is a strong wind from the south at about 8-10m/s.
+
+```{r, echo=FALSE}
+polarPlot(my1_2021, pollutant = "nox")
+```
+
+Finally a network map can be very useful for understanding the location and surrounding environment of a monitoring site. Here we have the aurn network map with optional selectors for site type:
+
+```{r, echo=FALSE}
+networkMap(source = "aurn", control = "site_type")
+```
+
+## Monitoring air quality at road side sites
+
+Openair can be used to monitor the air quality with site types listed as urban road. 
+
+```{r, echo= FALSE, error=FALSE, warning=FALSE}
+roadside_code <- importMeta(source = "aurn", all = TRUE) %>%
+  filter(site_type == "Urban Traffic", start_date < "2018-01-01", end_date == "ongoing") %>%
+  select(code) %>%
+  unique()
+
+roadside<- importAURN(site = roadside_code$code, year= 2018:2022, data_type = "monthly", pollutant = c("nox", "pm2.5")) %>%
+  mutate(year = year(mdy(date)))
+
+roadside_total <- roadside %>%
+  select(nox, pm2.5, date)
+
+roadside_total <- roadside_total %>%
+  group_by(date) %>%
+  summarise(mean_nox = mean(nox, na.rm = TRUE), mean_pm2.5 = mean(pm2.5, na.rm = TRUE))
+
+```
+
+Below is a summary of the 66 roadside sites that were operational from at least 2018 (there are 7 sites that have come on line more recently and 63 other sites that have been discontinued at some point that have not been included in this analysis)
+
+```{r,echo=FALSE, fig.width= 10}
+
+# mean nox time-seriesPlot
+roadside_total %>%
+  timePlot( 
+         pollutant = "mean_nox", 
+         ylab = "mean roadside nox(ug/m3) from 2018 until present",
+         avg.time = "month")
+
+
+#mean pm2.5 time-seriesPlot
+roadside_total %>%
+  timePlot( 
+         pollutant = "mean_pm2.5", 
+         ylab = "mean roadside pm2.5(ug/m3) from 2018 until present",
+         avg.time = "month")
+
+#scatterPlot
+scatterPlot(roadside_total, x = "mean_nox", y = "mean_pm2.5",
+            smooth = TRUE,
+            method = "hexbin",
+            cols = "inferno")
+```
